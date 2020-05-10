@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::Display;
 
-#[derive(PartialEq, Eq, Default, Clone)]
+#[derive(PartialEq, Eq, Default, Clone, Copy)]
 struct Location {
     line: usize,
     col: usize,
@@ -39,13 +39,13 @@ enum TokenKind {
 }
 
 #[derive(PartialEq, Eq, Clone)]
-struct Token {
+pub struct Token {
     value: String,
     kind: TokenKind,
     loc: Location,
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 struct Cursor {
     pointer: usize,
     loc: Location,
@@ -60,19 +60,23 @@ impl Display for LexError {
         match self {
             LexError::InvalidToken((prev_token, cursor)) => {
                 let hint = match prev_token {
-                    None => String::new(), 
-                    Some(token) => " after token ".to_string() + &token.value 
+                    None => String::new(),
+                    Some(token) => " after token ".to_string() + &token.value,
                 };
-                write!(f, "Unable to lex token {}, at {}:{}", hint, cursor.loc.line, cursor.loc.col)
+                write!(
+                    f,
+                    "Unable to lex token {}, at {}:{}",
+                    hint, cursor.loc.line, cursor.loc.col
+                )
             }
         }
     }
 }
 
-fn lex(source: String) -> Result<Vec<Token>, LexError> {
+fn lex(source: &str) -> Result<Vec<Token>, LexError> {
     let mut tokens: Vec<Token> = Vec::new();
     let mut cursor = Cursor::default();
-    let lexers: Vec<&dyn Fn(&String, &Cursor) -> Option<(Token, Cursor)>> = vec![
+    let lexers: Vec<&dyn Fn(&str, &Cursor) -> Option<(Token, Cursor)>> = vec![
         &lexString,
         &lexIdentifier,
         &lexSymbol,
@@ -83,7 +87,7 @@ fn lex(source: String) -> Result<Vec<Token>, LexError> {
     while cursor.pointer < source.len() {
         let mut found_token = false;
         for lexer in &lexers {
-            if let Some((token, new_cursor)) = lexer(&source, &cursor) {
+            if let Some((token, new_cursor)) = lexer(&source[cursor.pointer..], &cursor) {
                 cursor = new_cursor;
                 tokens.push(token);
                 found_token = true;
@@ -92,32 +96,149 @@ fn lex(source: String) -> Result<Vec<Token>, LexError> {
         }
         if !found_token {
             let t = match tokens.len() {
-                0 => None, 
-                n => Some(tokens[n-1].clone())
+                0 => None,
+                n => Some(tokens[n - 1].clone()),
             };
             return Err(LexError::InvalidToken((t, cursor)));
         }
     }
 
-    Ok(vec![])
+    Ok(tokens)
 }
 
-fn lexNumeric(source: &String, init_cursor: &Cursor) -> Option<(Token, Cursor)> {
+fn lexNumeric(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
+    let mut cur = init_cur.clone();
+    let mut found_period = false;
+    let mut found_exp_mark = false;
 
+    for c in source.chars() {
+        cur.loc.col += 1;
+        cur.pointer += 1;
+
+        let is_digit = c.is_ascii_digit();
+        let is_period = c == '.';
+        let is_exp_marker = c == 'e';
+
+        if cur.pointer == init_cur.pointer {
+            if !is_digit && !is_period {
+                return None;
+            }
+            found_period = is_period;
+            continue;
+        }
+
+        if is_period {
+            if found_period {
+                return None;
+            }
+            found_period = true;
+            continue;
+        }
+
+        if is_exp_marker {
+            if found_exp_mark {
+                return None;
+            }
+
+            found_exp_mark = true;
+            found_period = true;
+
+            if cur.pointer - init_cur.pointer == source.len() {
+                return None;
+            }
+
+            // TODO: handler +, -
+        }
+
+        if !is_digit {
+            break;
+        }
+    }
+
+    Some((
+        Token {
+            value: source[..cur.pointer].to_string(),
+            loc: init_cur.loc,
+            kind: TokenKind::Numeric,
+        },
+        cur,
+    ))
 }
 
-fn lexSymbol(source: &String, init_cursor: &Cursor) -> Option<(Token, Cursor)> {
+fn lexSymbol(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
+    let mut cur = init_cur.clone();
+    cur.loc.col += 1;
+    cur.pointer += 1;
+    if let Some(c) = source.chars().next() {
+        match c {
+            '\n' => {
+                cur.loc.line += 1;
+                cur.loc.col = 0;
+                None
+            }
+            '\t' | ' ' => None,
+            '(' => Some((
+                Token {
+                    value: c.to_string(),
+                    loc: init_cur.loc,
+                    kind: TokenKind::Symbol(Symbol::LeftParen),
+                },
+                cur,
+            )),
+            ';' => Some((
+                Token {
+                    value: c.to_string(),
+                    loc: init_cur.loc,
+                    kind: TokenKind::Symbol(Symbol::Semicolon),
+                },
+                cur,
+            )),
+            ')' => Some((
+                Token {
+                    value: c.to_string(),
+                    loc: init_cur.loc,
+                    kind: TokenKind::Symbol(Symbol::RightParen),
+                },
+                cur,
+            )),
+            '*' => Some((
+                Token {
+                    value: c.to_string(),
+                    loc: init_cur.loc,
+                    kind: TokenKind::Symbol(Symbol::Asterisk),
+                },
+                cur,
+            )),
+            '*' => Some((
+                Token {
+                    value: c.to_string(),
+                    loc: init_cur.loc,
+                    kind: TokenKind::Symbol(Symbol::Asterisk),
+                },
+                cur,
+            )),
+            ',' => Some((
+                Token {
+                    value: c.to_string(),
+                    loc: init_cur.loc,
+                    kind: TokenKind::Symbol(Symbol::Comma),
+                },
+                cur,
+            )),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+fn lexIdentifier(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
     None
 }
 
-fn lexIdentifier(source: &String, init_cursor: &Cursor) -> Option<(Token, Cursor)> {
+fn lexString(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
     None
 }
-
-fn lexString(source: &String, init_cursor: &Cursor) -> Option<(Token, Cursor)> {
-    None
-}
-
-fn lexKeyword(source: &String, init_cursor: &Cursor) -> Option<(Token, Cursor)> {
+fn lexKeyword(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
     None
 }
