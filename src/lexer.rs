@@ -1,244 +1,177 @@
-use std::fmt;
-use std::fmt::Display;
+#[derive(PartialEq, Debug)]
+struct Token {
+    value: String,
+}
 
-#[derive(PartialEq, Eq, Default, Clone, Copy)]
+#[derive(Default)]
 struct Location {
     line: usize,
-    col: usize,
+    column: usize,
 }
 
-#[derive(PartialEq, Eq, Clone)]
-enum Keyword {
-    SelectKeyword,
-    FromKeyword,
-    AsKeyword,
-    TableKeyword,
-    CreateKeyword,
-    InsertKeyword,
-    ValuesKeyword,
-    IntKeyword,
-    TextKeyword,
-}
-
-#[derive(PartialEq, Eq, Clone)]
-enum Symbol {
-    Semicolon,
-    Asterisk,
-    Comma,
-    LeftParen,
-    RightParen,
-}
-
-#[derive(PartialEq, Eq, Clone)]
-enum TokenKind {
-    Symbol(Symbol),
-    Keyword(Keyword),
-    Identifier,
-    String,
-    Numeric,
-}
-
-#[derive(PartialEq, Eq, Clone)]
-pub struct Token {
-    value: String,
-    kind: TokenKind,
-    loc: Location,
-}
-
-#[derive(Default, Copy, Clone)]
+#[derive(Default)]
 struct Cursor {
     pointer: usize,
     loc: Location,
 }
 
-enum LexError {
-    InvalidToken((Option<Token>, Cursor)),
-}
-
-impl Display for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LexError::InvalidToken((prev_token, cursor)) => {
-                let hint = match prev_token {
-                    None => String::new(),
-                    Some(token) => " after token ".to_string() + &token.value,
-                };
-                write!(
-                    f,
-                    "Unable to lex token {}, at {}:{}",
-                    hint, cursor.loc.line, cursor.loc.col
-                )
-            }
-        }
-    }
-}
-
-fn lex(source: &str) -> Result<Vec<Token>, LexError> {
-    let mut tokens: Vec<Token> = Vec::new();
+fn lex_numeric(source: &str) -> Option<(Token, Cursor)> {
     let mut cursor = Cursor::default();
-    let lexers: Vec<&dyn Fn(&str, &Cursor) -> Option<(Token, Cursor)>> = vec![
-        &lexString,
-        &lexIdentifier,
-        &lexSymbol,
-        &lexNumeric,
-        &lexKeyword,
-    ];
 
-    while cursor.pointer < source.len() {
-        let mut found_token = false;
-        for lexer in &lexers {
-            if let Some((token, new_cursor)) = lexer(&source[cursor.pointer..], &cursor) {
-                cursor = new_cursor;
-                tokens.push(token);
-                found_token = true;
-                break;
-            }
-        }
-        if !found_token {
-            let t = match tokens.len() {
-                0 => None,
-                n => Some(tokens[n - 1].clone()),
-            };
-            return Err(LexError::InvalidToken((t, cursor)));
-        }
-    }
+    let mut period_found = false;
+    let mut exp_marker_found = false;
+    let mut exp_marker_index = 0;
 
-    Ok(tokens)
-}
+    for (i, c) in source.chars().enumerate() {
+        cursor.loc.column += 1;
 
-fn lexNumeric(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
-    let mut cur = init_cur.clone();
-    let mut found_period = false;
-    let mut found_exp_mark = false;
-
-    for c in source.chars() {
-        cur.loc.col += 1;
-        cur.pointer += 1;
-
-        let is_digit = c.is_ascii_digit();
+        let is_digit = c.is_digit(10);
         let is_period = c == '.';
         let is_exp_marker = c == 'e';
 
-        if cur.pointer == init_cur.pointer {
-            if !is_digit && !is_period {
-                return None;
-            }
-            found_period = is_period;
-            continue;
+        // it should start with digit or period.
+        if i == 0 && !is_digit && !is_period {
+            return None;
         }
 
         if is_period {
-            if found_period {
+            // there should not be two periods.
+            if period_found {
                 return None;
             }
-            found_period = true;
+            period_found = true;
+        } else if is_exp_marker {
+            exp_marker_index = i;
+            // there should not be two exp markers.
+            if exp_marker_found {
+                return None;
+            }
+            exp_marker_found = true;
+            // no periods are allowed after the exp marker.
+            period_found = true;
+
+            // exp marker should be followed by digits.
+            if i == source.len() - 1 {
+                return None;
+            }
+        } else if (c == '+' || c == '-') && exp_marker_index == i - 1 {
+            cursor.pointer += 1;
             continue;
-        }
-
-        if is_exp_marker {
-            if found_exp_mark {
-                return None;
-            }
-
-            found_exp_mark = true;
-            found_period = true;
-
-            if cur.pointer - init_cur.pointer == source.len() {
-                return None;
-            }
-
-            // TODO: handler +, -
-        }
-
-        if !is_digit {
+        } else if !is_digit {
             break;
         }
+
+        cursor.pointer += 1;
     }
 
     Some((
         Token {
-            value: source[..cur.pointer].to_string(),
-            loc: init_cur.loc,
-            kind: TokenKind::Numeric,
+            value: source[..cursor.pointer].to_string(),
         },
-        cur,
+        cursor,
     ))
 }
 
-fn lexSymbol(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
-    let mut cur = init_cur.clone();
-    cur.loc.col += 1;
-    cur.pointer += 1;
-    if let Some(c) = source.chars().next() {
-        match c {
-            '\n' => {
-                cur.loc.line += 1;
-                cur.loc.col = 0;
-                None
+#[cfg(test)]
+mod tests {
+    use crate::lexer::lex_numeric;
+
+    fn test_numeric_lexer(source: &str, should_be_none: bool) {
+        let received_token = lex_numeric(source);
+        assert_eq!(received_token.is_none(), should_be_none);
+        if !should_be_none {
+            if let Some((token, _)) = received_token {
+                assert_eq!(token.value, source);
             }
-            '\t' | ' ' => None,
-            '(' => Some((
-                Token {
-                    value: c.to_string(),
-                    loc: init_cur.loc,
-                    kind: TokenKind::Symbol(Symbol::LeftParen),
-                },
-                cur,
-            )),
-            ';' => Some((
-                Token {
-                    value: c.to_string(),
-                    loc: init_cur.loc,
-                    kind: TokenKind::Symbol(Symbol::Semicolon),
-                },
-                cur,
-            )),
-            ')' => Some((
-                Token {
-                    value: c.to_string(),
-                    loc: init_cur.loc,
-                    kind: TokenKind::Symbol(Symbol::RightParen),
-                },
-                cur,
-            )),
-            '*' => Some((
-                Token {
-                    value: c.to_string(),
-                    loc: init_cur.loc,
-                    kind: TokenKind::Symbol(Symbol::Asterisk),
-                },
-                cur,
-            )),
-            '*' => Some((
-                Token {
-                    value: c.to_string(),
-                    loc: init_cur.loc,
-                    kind: TokenKind::Symbol(Symbol::Asterisk),
-                },
-                cur,
-            )),
-            ',' => Some((
-                Token {
-                    value: c.to_string(),
-                    loc: init_cur.loc,
-                    kind: TokenKind::Symbol(Symbol::Comma),
-                },
-                cur,
-            )),
-            _ => None,
         }
-    } else {
-        None
     }
-}
 
-fn lexIdentifier(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
-    None
-}
+    #[test]
+    fn test_lex_numeric_basic_number() {
+        let source = "226";
+        test_numeric_lexer(source, false);
+    }
 
-fn lexString(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
-    None
-}
-fn lexKeyword(source: &str, init_cur: &Cursor) -> Option<(Token, Cursor)> {
-    None
+    #[test]
+    fn trest_lex_numeric_basic_number_one_digit() {
+        let source = "8";
+        test_numeric_lexer(source, false);
+    }
+
+    #[test]
+    fn test_lex_numeric_exponential_one_digit() {
+        let source = "1e3";
+        test_numeric_lexer(source, false);
+    }
+
+    #[test]
+    fn test_lex_numeric_exponential_no_exp() {
+        let source = "1e";
+        test_numeric_lexer(source, true);
+    }
+
+    #[test]
+    fn test_lex_numeric_exponential_negative() {
+        let source = "1e-21";
+        test_numeric_lexer(source, false);
+    }
+
+    #[test]
+    fn test_lex_numeric_exponential_floating() {
+        let source = "1.1e32";
+        test_numeric_lexer(source, false);
+    }
+
+    #[test]
+    fn test_lex_numeric_exponential_floating_negative() {
+        let source = "1.42e-321";
+        test_numeric_lexer(source, false);
+    }
+    #[test]
+    fn test_lex_numeric_floating_1() {
+        let source = "1.1";
+        test_numeric_lexer(source, false);
+    }
+
+    #[test]
+    fn test_lex_numeric_floating_2() {
+        let source = ".1";
+        test_numeric_lexer(source, false);
+    }
+
+    #[test]
+    fn test_lex_numeric_floating_3() {
+        let source = "6.";
+        test_numeric_lexer(source, false);
+    }
+
+    #[test]
+    fn test_lex_numeric_exp_no_base() {
+        let source = "e8";
+        test_numeric_lexer(source, true);
+    }
+
+    #[test]
+    fn test_lex_numeric_exp_two_exp_marks() {
+        let source = "1ee7";
+        test_numeric_lexer(source, true);
+    }
+
+    #[test]
+    fn test_lex_numeric_floating_two_points() {
+        let source = "1..";
+        test_numeric_lexer(source, true);
+    }
+
+    #[test]
+    fn test_lex_numeric_basic_whitespace() {
+        let source = " 1";
+        test_numeric_lexer(source, true);
+    }
+
+    #[test]
+    fn test_lex_numeric_end_with_exp_marker() {
+        let source = "1e";
+        test_numeric_lexer(source, true);
+    }
 }
