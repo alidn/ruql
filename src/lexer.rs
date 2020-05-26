@@ -1,3 +1,5 @@
+use std::fs::OpenOptions;
+
 #[derive(PartialEq, Debug)]
 struct Token {
     value: String,
@@ -15,6 +17,41 @@ struct Cursor {
     loc: Location,
 }
 
+fn lex_delimiter(source: &str, delimiter: char) -> Option<(Token, Cursor)> {
+    let mut source_iterator = source.char_indices();
+    let mut cursor = Cursor::default();
+
+    // the first character should be delimiter.
+    if let Some((_, first_char)) = source_iterator.next() {
+        if first_char != delimiter {
+            return None;
+        }
+    } else {
+        return None;
+    }
+
+    let find_sec_delimiter_result = source_iterator.find(|&(_, c)| c == '\'');
+    find_sec_delimiter_result?;
+
+    let second_delimiter = source_iterator.skip_while(|&(_, c)| c != '\'');
+    let mut last_delimiter = second_delimiter.skip_while(|&(_, c)| c == '\'');
+
+    let last_index = match last_delimiter.next() {
+        Some((index, _)) => index - 1,
+        None => source.len() - 1,
+    } + 1;
+
+    cursor.pointer = last_index + 1;
+    cursor.loc.column = last_index + 1;
+
+    Some((
+        Token {
+            value: source[..last_index].to_string(),
+        },
+        cursor,
+    ))
+}
+
 fn lex_numeric(source: &str) -> Option<(Token, Cursor)> {
     let mut cursor = Cursor::default();
 
@@ -22,7 +59,7 @@ fn lex_numeric(source: &str) -> Option<(Token, Cursor)> {
     let mut exp_marker_found = false;
     let mut exp_marker_index = 0;
 
-    for (i, c) in source.chars().enumerate() {
+    for (i, c) in source.char_indices() {
         cursor.loc.column += 1;
 
         let is_digit = c.is_digit(10);
@@ -74,14 +111,14 @@ fn lex_numeric(source: &str) -> Option<(Token, Cursor)> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::lex_numeric;
+    use crate::lexer::{lex_delimiter, lex_numeric};
 
-    fn test_numeric_lexer(source: &str, should_be_none: bool) {
+    fn test_numeric_lexer(source: &str, should_be_none: bool, expected_result: &str) {
         let received_token = lex_numeric(source);
         assert_eq!(received_token.is_none(), should_be_none);
         if !should_be_none {
             if let Some((token, _)) = received_token {
-                assert_eq!(token.value, source);
+                assert_eq!(token.value, expected_result);
             }
         }
     }
@@ -89,89 +126,113 @@ mod tests {
     #[test]
     fn test_lex_numeric_basic_number() {
         let source = "226";
-        test_numeric_lexer(source, false);
+        test_numeric_lexer(source, false, source);
     }
 
     #[test]
     fn trest_lex_numeric_basic_number_one_digit() {
         let source = "8";
-        test_numeric_lexer(source, false);
+        test_numeric_lexer(source, false, source);
     }
 
     #[test]
     fn test_lex_numeric_exponential_one_digit() {
         let source = "1e3";
-        test_numeric_lexer(source, false);
+        test_numeric_lexer(source, false, source);
     }
 
     #[test]
     fn test_lex_numeric_exponential_no_exp() {
         let source = "1e";
-        test_numeric_lexer(source, true);
+        test_numeric_lexer(source, true, source);
     }
 
     #[test]
     fn test_lex_numeric_exponential_negative() {
         let source = "1e-21";
-        test_numeric_lexer(source, false);
+        test_numeric_lexer(source, false, source);
     }
 
     #[test]
     fn test_lex_numeric_exponential_floating() {
         let source = "1.1e32";
-        test_numeric_lexer(source, false);
+        test_numeric_lexer(source, false, source);
     }
 
     #[test]
     fn test_lex_numeric_exponential_floating_negative() {
         let source = "1.42e-321";
-        test_numeric_lexer(source, false);
+        test_numeric_lexer(source, false, source);
     }
     #[test]
     fn test_lex_numeric_floating_1() {
         let source = "1.1";
-        test_numeric_lexer(source, false);
+        test_numeric_lexer(source, false, source);
     }
 
     #[test]
     fn test_lex_numeric_floating_2() {
         let source = ".1";
-        test_numeric_lexer(source, false);
+        test_numeric_lexer(source, false, source);
     }
 
     #[test]
     fn test_lex_numeric_floating_3() {
         let source = "6.";
-        test_numeric_lexer(source, false);
+        test_numeric_lexer(source, false, source);
     }
 
     #[test]
     fn test_lex_numeric_exp_no_base() {
         let source = "e8";
-        test_numeric_lexer(source, true);
+        test_numeric_lexer(source, true, source);
     }
 
     #[test]
     fn test_lex_numeric_exp_two_exp_marks() {
         let source = "1ee7";
-        test_numeric_lexer(source, true);
+        test_numeric_lexer(source, true, source);
     }
 
     #[test]
     fn test_lex_numeric_floating_two_points() {
         let source = "1..";
-        test_numeric_lexer(source, true);
+        test_numeric_lexer(source, true, source);
+    }
+
+    #[test]
+    fn test_lex_numeric_invalid_char() {
+        let source = "1a1";
+        let expected_result = "1";
+        test_numeric_lexer(source, false, expected_result);
     }
 
     #[test]
     fn test_lex_numeric_basic_whitespace() {
         let source = " 1";
-        test_numeric_lexer(source, true);
+        test_numeric_lexer(source, true, source);
     }
 
     #[test]
     fn test_lex_numeric_end_with_exp_marker() {
         let source = "1e";
-        test_numeric_lexer(source, true);
+        test_numeric_lexer(source, true, source);
+    }
+
+    #[test]
+    fn test_lex_delimiter_basic() {
+        let source = "'aabbcc'";
+        let result = lex_delimiter(source, '\'');
+        assert!(result.is_some());
+        if let Some((token, _)) = result {
+            assert_eq!(token.value, source);
+        }
+    }
+
+    #[test]
+    fn test_lex_delimiter_no_end() {
+        let source = "'aabbcc";
+        let result = lex_delimiter(source, '\'');
+        assert!(result.is_none());
     }
 }
