@@ -30,16 +30,18 @@ fn lex_delimiter(source: &str, delimiter: char) -> Option<(Token, Cursor)> {
         return None;
     }
 
-    let find_sec_delimiter_result = source_iterator.find(|&(_, c)| c == '\'');
-    find_sec_delimiter_result?;
+    let does_sec_delimiter_exist = source_iterator.find(|&(_, c)| c == '\'');
+    does_sec_delimiter_exist?;
 
     let second_delimiter = source_iterator.skip_while(|&(_, c)| c != '\'');
-    let mut last_delimiter = second_delimiter.skip_while(|&(_, c)| c == '\'');
 
-    let last_index = match last_delimiter.next() {
-        Some((index, _)) => index - 1,
-        None => source.len() - 1,
-    } + 1;
+    let mut last_index = source.len();
+    for (index, ch) in second_delimiter {
+        if ch != delimiter {
+            last_index = index - 2;
+            break;
+        }
+    }
 
     cursor.pointer = last_index + 1;
     cursor.loc.column = last_index + 1;
@@ -231,8 +233,47 @@ mod tests {
 
     #[test]
     fn test_lex_delimiter_no_end() {
-        let source = "'aabbcc";
+        let source = "'aabb";
         let result = lex_delimiter(source, '\'');
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_lex_delimiter_no_start() {
+        let source = "asdf'";
+        let result = lex_delimiter(source, '\'');
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_lex_delimiter_escape() {
+        let source = "'asdf''";
+        let result = lex_delimiter(source, '\'');
+        assert!(result.is_some());
+        if let Some((token, _)) = result {
+            assert_eq!(token.value, source);
+        }
+    }
+
+    #[test]
+    fn test_lex_delimiter_delimiter_in_between() {
+        let source = "'as' 'df''";
+        let result = lex_delimiter(source, '\'');
+        let expected = "'as'";
+        assert!(result.is_some());
+        if let Some((token, _)) = result {
+            assert_eq!(token.value, expected);
+        }
+    }
+
+    #[test]
+    fn test_lex_delimiter_delimiter_in_between_2() {
+        let source = "'as'x'df''";
+        let result = lex_delimiter(source, '\'');
+        let expected = "'as'";
+        assert!(result.is_some());
+        if let Some((token, _)) = result {
+            assert_eq!(token.value, expected);
+        }
     }
 }
