@@ -4,7 +4,8 @@ use crate::error::Error;
 use crate::lexer::lex;
 
 fn main() -> Result<(), Error> {
-    let source = "select 'name' from 'users'";
+    let source = "select name from users where user_id = 1;
+    and email = 'something@gmail.com'";
 
     let tokens = lex(source)?;
 

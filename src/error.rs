@@ -8,7 +8,10 @@ pub struct Error {
 
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ERR!").field(&self.repr).field(&self.location).finish()
+        f.debug_tuple("ERR!")
+            .field(&self.repr)
+            .field(&self.location)
+            .finish()
     }
 }
 

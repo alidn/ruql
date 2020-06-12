@@ -21,7 +21,11 @@ struct Cursor {
 impl Cursor {
     pub fn merge(&mut self, other: Self) {
         self.pointer += other.pointer;
-        self.loc.column += other.loc.column;
+        if other.loc.line > 0 {
+            self.loc.column = other.loc.column;
+        } else {
+            self.loc.column += other.loc.column;
+        }
         self.loc.line += other.loc.line;
     }
 }
@@ -103,11 +107,14 @@ enum KeywordType {
     Create,
     Insert,
     As,
+    And,
+    Or,
     Into,
     Table,
     Values,
     Int,
     Text,
+    Where,
 }
 
 impl KeywordType {
@@ -123,6 +130,9 @@ impl KeywordType {
             KeywordType::Int => "int",
             KeywordType::Text => "text",
             KeywordType::Into => "into",
+            KeywordType::Where => "where",
+            KeywordType::And => "and",
+            KeywordType::Or => "or",
         }
     }
 
@@ -138,6 +148,9 @@ impl KeywordType {
             KeywordType::Into,
             KeywordType::Int,
             KeywordType::Text,
+            KeywordType::Where,
+            KeywordType::And,
+            KeywordType::Or,
         ]
         .to_vec();
         keyword_types
@@ -151,7 +164,6 @@ enum TokenKind {
     Identifier,
     String,
     Numeric,
-    Bool,
     Null,
 }
 
@@ -245,6 +257,43 @@ fn lex_char_delimited(source: &str, delimiter: char) -> Option<(Token, Cursor)> 
     ))
 }
 
+fn lex_identifier(source: &str) -> Option<(Token, Cursor)> {
+    // TODO: handle quotes identifiers;
+
+    let mut cursor = Cursor::default();
+
+    for (i, c) in source.char_indices() {
+        if i == 0 {
+            if !c.is_ascii_alphabetic() {
+                return None;
+            } else {
+                cursor.pointer += 1;
+                cursor.loc.column += 1;
+            }
+            continue;
+        }
+
+        if c.is_ascii_alphanumeric() || c == '_' {
+            cursor.pointer += 1;
+            cursor.loc.column += 1;
+        } else {
+            break;
+        }
+    }
+
+    if cursor.pointer == 0 {
+        return None;
+    }
+
+    Some((
+        Token {
+            value: source[..cursor.pointer].to_string().to_lowercase(),
+            kind: TokenKind::Identifier,
+        },
+        cursor,
+    ))
+}
+
 fn lex_numeric(source: &str) -> Option<(Token, Cursor)> {
     let mut cursor = Cursor::default();
 
@@ -308,7 +357,6 @@ pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
     let mut tokens = Vec::<Token>::new();
 
     while cursor.pointer < source.len() {
-        // println!("Tokens ---> {:?}", tokens);
         if let Some((next_token, moved_cursor)) = lex_numeric(&source[cursor.pointer..]) {
             tokens.push(next_token);
             cursor.merge(moved_cursor);
@@ -329,6 +377,11 @@ pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
             cursor.merge(moved_cursor);
             continue;
         }
+        if let Some((next_token, moved_cursor)) = lex_identifier(&source[cursor.pointer..]) {
+            tokens.push(next_token);
+            cursor.merge(moved_cursor);
+            continue;
+        }
         if source[cursor.pointer..].starts_with(" ") {
             cursor.pointer += 1;
             cursor.loc.column += 1;
@@ -342,9 +395,8 @@ pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::TokenKind::Keyword;
     use crate::lexer::{
-        lex_char_delimited, lex_keyword, lex_numeric, lex_string, lex_symbol, KeywordType,
+        lex_char_delimited, lex_identifier, lex_keyword, lex_numeric, lex_symbol, KeywordType,
         SymbolType, TokenKind,
     };
 
@@ -572,6 +624,42 @@ mod tests {
     fn test_lex_symbol_space_beginning() {
         let source = " !=";
         let result = lex_symbol(source);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_lex_identifier() {
+        let source = "hello";
+        let result = lex_identifier(source);
+        let (token, _) = result.unwrap();
+        assert_eq!(token.value, source);
+    }
+
+    #[test]
+    fn test_lex_identifier_including_numeric() {
+        let source = "he123as";
+        let (token, _) = lex_identifier(source).unwrap();
+        assert_eq!(token.value, source);
+    }
+
+    #[test]
+    fn test_lex_identifier_start_with_number() {
+        let source = "9hello";
+        let result = lex_identifier(source);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_lex_identifier_start_with_invalid() {
+        let source = "$hello";
+        let result = lex_identifier(source);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_lex_identifier_start_with_space() {
+        let source = " hello";
+        let result = lex_identifier(source);
         assert!(result.is_none());
     }
 }
