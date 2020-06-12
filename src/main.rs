@@ -1,5 +1,16 @@
-mod lexer; 
+mod error;
+mod lexer;
+use crate::error::Error;
+use crate::lexer::lex;
 
-fn main() {
-    println!("{}", usize::MAX); 
+fn main() -> Result<(), Error> {
+    let source = "select 'name' from 'users'";
+
+    let tokens = lex(source)?;
+
+    for token in tokens {
+        println!("{:?}", token);
+    }
+
+    Ok(())
 }

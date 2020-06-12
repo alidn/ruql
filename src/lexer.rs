@@ -1,21 +1,29 @@
-use crate::lexer::TokenKind::Symbol;
+use crate::error::{Error, ErrorKind};
 
 #[derive(PartialEq, Debug)]
-struct Token {
+pub struct Token {
     value: String,
     kind: TokenKind,
 }
 
-#[derive(Default)]
-struct Location {
-    line: usize,
-    column: usize,
+#[derive(Default, Debug)]
+pub struct Location {
+    pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Default)]
 struct Cursor {
     pointer: usize,
     loc: Location,
+}
+
+impl Cursor {
+    pub fn merge(&mut self, other: Self) {
+        self.pointer += other.pointer;
+        self.loc.column += other.loc.column;
+        self.loc.line += other.loc.line;
+    }
 }
 
 // /semicolonSymbol  symbol = ";"
@@ -69,7 +77,7 @@ impl SymbolType {
     }
 
     pub fn values() -> Vec<SymbolType> {
-        let symbolTypes = [
+        let symbol_types = [
             SymbolType::Semicolon,
             SymbolType::Comma,
             SymbolType::LeftParen,
@@ -84,7 +92,7 @@ impl SymbolType {
             SymbolType::Endl,
             SymbolType::Tab,
         ];
-        symbolTypes.to_vec()
+        symbol_types.to_vec()
     }
 }
 
@@ -119,7 +127,7 @@ impl KeywordType {
     }
 
     pub fn values() -> Vec<KeywordType> {
-        let keywordTypes: Vec<KeywordType> = [
+        let keyword_types: Vec<KeywordType> = [
             KeywordType::Select,
             KeywordType::From,
             KeywordType::Create,
@@ -132,7 +140,7 @@ impl KeywordType {
             KeywordType::Text,
         ]
         .to_vec();
-        keywordTypes
+        keyword_types
     }
 }
 
@@ -214,12 +222,12 @@ fn lex_char_delimited(source: &str, delimiter: char) -> Option<(Token, Cursor)> 
     let does_sec_delimiter_exist = source_iterator.find(|&(_, c)| c == '\'');
     does_sec_delimiter_exist?;
 
-    let second_delimiter = source_iterator.skip_while(|&(_, c)| c != '\'');
+    let second_delimiter = source_iterator.skip_while(|&(_, c)| c == '\'');
 
     let mut last_index = source.len();
     for (index, ch) in second_delimiter {
         if ch != delimiter {
-            last_index = index - 2;
+            last_index = index;
             break;
         }
     }
@@ -293,6 +301,43 @@ fn lex_numeric(source: &str) -> Option<(Token, Cursor)> {
         },
         cursor,
     ))
+}
+
+pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
+    let mut cursor = Cursor::default();
+    let mut tokens = Vec::<Token>::new();
+
+    while cursor.pointer < source.len() {
+        // println!("Tokens ---> {:?}", tokens);
+        if let Some((next_token, moved_cursor)) = lex_numeric(&source[cursor.pointer..]) {
+            tokens.push(next_token);
+            cursor.merge(moved_cursor);
+            continue;
+        }
+        if let Some((next_token, moved_cursor)) = lex_keyword(&source[cursor.pointer..]) {
+            tokens.push(next_token);
+            cursor.merge(moved_cursor);
+            continue;
+        }
+        if let Some((next_token, moved_cursor)) = lex_string(&source[cursor.pointer..]) {
+            tokens.push(next_token);
+            cursor.merge(moved_cursor);
+            continue;
+        }
+        if let Some((next_token, moved_cursor)) = lex_symbol(&source[cursor.pointer..]) {
+            tokens.push(next_token);
+            cursor.merge(moved_cursor);
+            continue;
+        }
+        if source[cursor.pointer..].starts_with(" ") {
+            cursor.pointer += 1;
+            cursor.loc.column += 1;
+            continue;
+        }
+        return Err(Error::new(ErrorKind::InvalidToken, cursor.loc));
+    }
+
+    Ok(tokens)
 }
 
 #[cfg(test)]
@@ -448,6 +493,17 @@ mod tests {
         let source = "'as' 'df''";
         let result = lex_char_delimited(source, '\'');
         let expected = "'as'";
+        assert!(result.is_some());
+        if let Some((token, _)) = result {
+            assert_eq!(token.value, expected);
+        }
+    }
+
+    #[test]
+    fn test_lex_delimiter_with_space() {
+        let source = "'name' from";
+        let result = lex_char_delimited(source, '\'');
+        let expected = "'name'";
         assert!(result.is_some());
         if let Some((token, _)) = result {
             assert_eq!(token.value, expected);
