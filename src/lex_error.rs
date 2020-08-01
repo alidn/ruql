@@ -1,12 +1,12 @@
-use crate::lexer::Location;
+use crate::cursor::Location;
 use std::fmt;
 
-pub struct Error {
+pub struct LexError {
     repr: ErrorKind,
     location: Location,
 }
 
-impl fmt::Debug for Error {
+impl fmt::Debug for LexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("ERR!")
             .field(&self.repr)
@@ -15,9 +15,9 @@ impl fmt::Debug for Error {
     }
 }
 
-impl Error {
-    pub fn new(kind: ErrorKind, loc: Location) -> Error {
-        Error {
+impl LexError {
+    pub fn new(kind: ErrorKind, loc: Location) -> LexError {
+        LexError {
             repr: kind,
             location: loc,
         }
