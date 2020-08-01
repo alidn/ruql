@@ -1,49 +1,12 @@
-use crate::error::{Error, ErrorKind};
+use crate::lex_error::{LexError, ErrorKind};
+use crate::cursor::Cursor;
 
 #[derive(PartialEq, Debug)]
 pub struct Token {
-    value: String,
-    kind: TokenKind,
+    pub value: String,
+    pub kind: TokenKind,
 }
 
-#[derive(Default, Debug)]
-pub struct Location {
-    pub line: usize,
-    pub column: usize,
-}
-
-#[derive(Default)]
-struct Cursor {
-    pointer: usize,
-    loc: Location,
-}
-
-impl Cursor {
-    pub fn merge(&mut self, other: Self) {
-        self.pointer += other.pointer;
-        if other.loc.line > 0 {
-            self.loc.column = other.loc.column;
-        } else {
-            self.loc.column += other.loc.column;
-        }
-        self.loc.line += other.loc.line;
-    }
-}
-
-// /semicolonSymbol  symbol = ";"
-// asteriskSymbol   symbol = "*"
-// commaSymbol      symbol = ","
-// leftParenSymbol  symbol = "("
-// rightParenSymbol symbol = ")"
-// eqSymbol         symbol = "="
-// neqSymbol        symbol = "<>"
-// neqSymbol2       symbol = "!="
-// concatSymbol     symbol = "||"
-// plusSymbol       symbol = "+"
-// ltSymbol         symbol = "<"
-// lteSymbol        symbol = "<="
-// gtSymbol         symbol = ">"
-// gteSymbol        symbol = ">="
 #[derive(Clone, Debug, PartialEq)]
 enum SymbolType {
     Semicolon,
@@ -101,7 +64,7 @@ impl SymbolType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum KeywordType {
+pub enum KeywordType {
     Select,
     From,
     Create,
@@ -158,7 +121,7 @@ impl KeywordType {
 }
 
 #[derive(PartialEq, Debug)]
-enum TokenKind {
+pub enum TokenKind {
     Keyword(KeywordType),
     Symbol(SymbolType),
     Identifier,
@@ -352,7 +315,7 @@ fn lex_numeric(source: &str) -> Option<(Token, Cursor)> {
     ))
 }
 
-pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
+pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
     let mut cursor = Cursor::default();
     let mut tokens = Vec::<Token>::new();
 
@@ -382,12 +345,12 @@ pub fn lex(source: &str) -> Result<Vec<Token>, Error> {
             cursor.merge(moved_cursor);
             continue;
         }
-        if source[cursor.pointer..].starts_with(" ") {
+        if source[cursor.pointer..].starts_with(' ') {
             cursor.pointer += 1;
             cursor.loc.column += 1;
             continue;
         }
-        return Err(Error::new(ErrorKind::InvalidToken, cursor.loc));
+        return Err(LexError::new(ErrorKind::InvalidToken, cursor.loc));
     }
 
     Ok(tokens)
