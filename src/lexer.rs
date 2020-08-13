@@ -1,14 +1,14 @@
-use crate::lex_error::{LexError, ErrorKind};
 use crate::cursor::Cursor;
+use crate::lex_error::{ErrorKind, LexError};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Token {
     pub value: String,
     pub kind: TokenKind,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum SymbolType {
+pub enum SymbolType {
     Semicolon,
     Comma,
     LeftParen,
@@ -120,7 +120,7 @@ impl KeywordType {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum TokenKind {
     Keyword(KeywordType),
     Symbol(SymbolType),
@@ -221,7 +221,12 @@ fn lex_char_delimited(source: &str, delimiter: char) -> Option<(Token, Cursor)> 
 }
 
 fn lex_identifier(source: &str) -> Option<(Token, Cursor)> {
-    // TODO: handle quotes identifiers;
+    // TODO: handle quoted identifiers;
+    let quoted_identifier = lex_char_delimited(source, '\'');
+    if let Some((mut token, cursor)) = quoted_identifier {
+        token.kind = TokenKind::Identifier;
+        return Some((token, cursor));
+    }
 
     let mut cursor = Cursor::default();
 
@@ -330,6 +335,11 @@ pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
             cursor.merge(moved_cursor);
             continue;
         }
+        if let Some((next_token, moved_cursor)) = lex_identifier(&source[cursor.pointer..]) {
+            tokens.push(next_token);
+            cursor.merge(moved_cursor);
+            continue;
+        }
         if let Some((next_token, moved_cursor)) = lex_string(&source[cursor.pointer..]) {
             tokens.push(next_token);
             cursor.merge(moved_cursor);
@@ -340,11 +350,7 @@ pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
             cursor.merge(moved_cursor);
             continue;
         }
-        if let Some((next_token, moved_cursor)) = lex_identifier(&source[cursor.pointer..]) {
-            tokens.push(next_token);
-            cursor.merge(moved_cursor);
-            continue;
-        }
+
         if source[cursor.pointer..].starts_with(' ') {
             cursor.pointer += 1;
             cursor.loc.column += 1;
@@ -624,5 +630,12 @@ mod tests {
         let source = " hello";
         let result = lex_identifier(source);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_lex_identifier_qouted() {
+        let source = "\'hello\'";
+        let (token, _) = lex_identifier(source).unwrap();
+        assert_eq!(token.value, source);
     }
 }
