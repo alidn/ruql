@@ -1,17 +1,26 @@
-mod error;
+mod ast;
+mod cursor;
+mod lex_error;
 mod lexer;
-use crate::error::Error;
+use crate::ast::Statement;
+use crate::lex_error::LexError;
 use crate::lexer::lex;
 
-fn main() -> Result<(), Error> {
-    let source = "select name from users where user_id = 1;
-    and email = 'something@gmail.com'";
+fn main() {
+    // let source = "select name from users where user_id = 1;
+    // and email = 'something@gmail.com'";
 
-    let tokens = lex(source)?;
+    // let tokens = lex(source)?;
 
-    for token in tokens {
-        println!("{:?}", token);
-    }
+    // for token in tokens {
+    //     println!("{:?}", token);
+    // }
 
-    Ok(())
+    let source = "insert into hello values (one, two, three )";
+
+    let tokens = lex(source).unwrap();
+
+    let stmt = ast::InsertStatement::from_tokens(&tokens).unwrap();
+
+    println!("{:#?}", stmt.unwrap());
 }
