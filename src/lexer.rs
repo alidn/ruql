@@ -7,6 +7,15 @@ pub struct Token {
     pub kind: TokenKind,
 }
 
+impl Token {
+    pub fn empty_token() -> Self {
+        Token {
+            value: String::new(),
+            kind: TokenKind::String,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum SymbolType {
     Semicolon,
@@ -420,6 +429,7 @@ mod tests {
         let source = "1.42e-321";
         test_numeric_lexer(source, false, source);
     }
+
     #[test]
     fn test_lex_numeric_floating_1() {
         let source = "1.1";
