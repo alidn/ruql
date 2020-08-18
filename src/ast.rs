@@ -1,4 +1,6 @@
 use crate::lexer::{KeywordType, SymbolType, Token, TokenKind};
+use std::borrow::BorrowMut;
+use std::ops::Deref;
 
 #[derive(Debug)]
 enum ErrorKind {
@@ -7,6 +9,9 @@ enum ErrorKind {
     MissingValuesKeyword,
     MissingLeftParen,
     MissingRightParens,
+    UnexpectedAsKeyword,
+    ExpectedNameAfterAs,
+    ExpectedComma,
 }
 
 #[derive(Debug)]
@@ -43,6 +48,7 @@ struct Column {
     is_primary_key: bool,
 }
 
+#[derive(Debug)]
 pub struct SelectStatement {
     table_name: Token,
     items: Vec<SelectItem>,
@@ -59,10 +65,7 @@ fn expect_token(
 ) -> Result<(), ParseError> {
     if token.is_none() {
         return Err(ParseError {
-            token: Token {
-                value: String::new(),
-                kind: TokenKind::String,
-            },
+            token: Token::empty_token(),
             error_kind,
         });
     }
@@ -103,10 +106,7 @@ impl Statement for InsertStatement {
         let table_name_token = tokens.next();
         if table_name_token.is_none() {
             return Err(ParseError {
-                token: Token {
-                    value: "".to_string(),
-                    kind: TokenKind::String,
-                },
+                token: Token::empty_token(),
                 error_kind: ErrorKind::MissingTableName,
             });
         }
@@ -131,17 +131,14 @@ impl Statement for InsertStatement {
             let token = tokens.next();
             if token.is_none() {
                 return Err(ParseError {
-                    token: Token {
-                        value: String::new(),
-                        kind: TokenKind::String,
-                    },
+                    token: Token::empty_token(),
                     error_kind: ErrorKind::MissingLeftParen,
                 });
             }
             let token = token.unwrap();
 
             match token.kind {
-                TokenKind::Identifier => values.push(token.clone()),
+                TokenKind::Identifier | TokenKind::Numeric => values.push(token.clone()),
                 TokenKind::Symbol(SymbolType::Comma) => continue,
                 _ => {
                     expect_token(
@@ -161,6 +158,88 @@ impl Statement for InsertStatement {
     }
 }
 
+impl Statement for SelectStatement {
+    // select
+    // [...$value [ as $name ] ]
+    // from
+    // $table_name
+    //
+    fn from_tokens(tokens: &[Token]) -> Result<Option<Self>, ParseError> {
+        let mut tokens = tokens.iter();
+
+        if tokens.next().unwrap().kind != TokenKind::Keyword(KeywordType::Select) {
+            return Ok(None);
+        }
+
+        let mut select_items: Vec<SelectItem> = vec![];
+        let mut is_comma = false;
+
+        loop {
+            if let Some(token) = tokens.next() {
+                match token.kind {
+                    TokenKind::Identifier | TokenKind::Numeric => {
+                        if !select_items.is_empty() && !is_comma {
+                            return Err(ParseError {
+                                token: token.clone(),
+                                error_kind: ErrorKind::ExpectedComma,
+                            });
+                        }
+                        select_items.push(SelectItem {
+                            name: token.clone(),
+                            as_name: None,
+                        });
+                        is_comma = false;
+                    }
+                    TokenKind::Keyword(KeywordType::As) => {
+                        if let Some(last_item) = select_items.last_mut() {
+                            if let Some(as_name_token) = tokens.next() {
+                                last_item.as_name = Some(as_name_token.clone());
+                            } else {
+                                return Err(ParseError {
+                                    token: Token::empty_token(),
+                                    error_kind: ErrorKind::ExpectedNameAfterAs,
+                                });
+                            }
+                        } else {
+                            return Err(ParseError {
+                                token: token.clone(),
+                                error_kind: ErrorKind::UnexpectedAsKeyword,
+                            });
+                        }
+                    }
+                    TokenKind::Symbol(SymbolType::Comma) => is_comma = true,
+                    _ => {
+                        expect_token(
+                            Some(token),
+                            TokenKind::Keyword(KeywordType::From),
+                            ErrorKind::MissingTableName,
+                        )?;
+                        break;
+                    }
+                }
+            } else {
+                return Err(ParseError {
+                    token: Token::empty_token(),
+                    error_kind: ErrorKind::MissingTableName,
+                });
+            }
+        }
+
+        if let Some(table_name_token) = tokens.next() {
+            Ok(Some(SelectStatement {
+                items: select_items,
+                table_name: table_name_token.clone(),
+            }))
+        } else {
+            Err(ParseError {
+                token: Token::empty_token(),
+                error_kind: ErrorKind::MissingTableName,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct SelectItem {
     name: Token,
     as_name: Option<Token>,
