@@ -12,6 +12,10 @@ enum ErrorKind {
     UnexpectedAsKeyword,
     ExpectedNameAfterAs,
     ExpectedComma,
+    ExpectedTableNameAfterCreate,
+    ExpectedColumnType,
+    ExpectedCommaOrRightParen,
+    InvalidType,
 }
 
 #[derive(Debug)]
@@ -37,11 +41,13 @@ pub struct InsertStatement {
     values: Vec<Token>,
 }
 
-struct CreateStatement {
+#[derive(Debug)]
+pub struct CreateStatement {
     name: Token,
     cols: Vec<Column>,
 }
 
+#[derive(Debug)]
 struct Column {
     name: Token,
     data_type: Token,
@@ -54,7 +60,7 @@ pub struct SelectStatement {
     items: Vec<SelectItem>,
 }
 
-pub trait Statement: Sized {
+pub trait Parsable: Sized {
     fn from_tokens(tokens: &[Token]) -> Result<Option<Self>, ParseError>;
 }
 
@@ -82,7 +88,7 @@ fn expect_token(
     }
 }
 
-impl Statement for InsertStatement {
+impl Parsable for InsertStatement {
     /// insert
     /// into
     /// $table_name
@@ -158,7 +164,7 @@ impl Statement for InsertStatement {
     }
 }
 
-impl Statement for SelectStatement {
+impl Parsable for SelectStatement {
     // select
     // [...$value [ as $name ] ]
     // from
@@ -236,6 +242,99 @@ impl Statement for SelectStatement {
                 error_kind: ErrorKind::MissingTableName,
             })
         }
+    }
+}
+
+impl Parsable for CreateStatement {
+    // create
+    // table $table_name
+    // (
+    //  [$name $type]
+    // )
+    fn from_tokens(tokens: &[Token]) -> Result<Option<Self>, ParseError> {
+        let mut tokens = tokens.iter();
+
+        if tokens.next().unwrap().kind != TokenKind::Keyword(KeywordType::Create) {
+            return Ok(None);
+        }
+
+        expect_token(
+            tokens.next(),
+            TokenKind::Keyword(KeywordType::Table),
+            ErrorKind::ExpectedTableNameAfterCreate,
+        )?;
+
+        let table_name_token = tokens.next();
+        if table_name_token.is_none() {
+            return Err(ParseError {
+                error_kind: ErrorKind::MissingTableName,
+                token: Token::empty_token(),
+            });
+        }
+        let table_name_token = table_name_token.unwrap();
+
+        expect_token(
+            tokens.next(),
+            TokenKind::Symbol(SymbolType::LeftParen),
+            ErrorKind::MissingLeftParen,
+        )?;
+
+        let mut cols = Vec::<Column>::new();
+
+        loop {
+            let col_name = tokens.next();
+            if col_name.is_none() {
+                return Err(ParseError {
+                    token: Token::empty_token(),
+                    error_kind: ErrorKind::MissingRightParens,
+                });
+            }
+            let col_name = col_name.unwrap();
+            let col_type = tokens.next();
+            if col_type.is_none() {
+                return Err(ParseError {
+                    token: Token::empty_token(),
+                    error_kind: ErrorKind::ExpectedColumnType,
+                });
+            }
+            let col_type = col_type.unwrap();
+            if col_type.kind != TokenKind::Keyword(KeywordType::Int)
+                && col_type.kind != TokenKind::Keyword(KeywordType::Text)
+            {
+                return Err(ParseError {
+                    token: col_type.clone(),
+                    error_kind: ErrorKind::InvalidType,
+                });
+            }
+            cols.push(Column {
+                name: col_name.clone(),
+                data_type: col_type.clone(),
+                is_primary_key: false,
+            });
+            let comma_or_right_paren = tokens.next();
+            if comma_or_right_paren.is_none() {
+                return Err(ParseError {
+                    error_kind: ErrorKind::MissingRightParens,
+                    token: Token::empty_token(),
+                });
+            }
+            let comma_or_right_paren = comma_or_right_paren.unwrap();
+            match comma_or_right_paren.kind {
+                TokenKind::Symbol(SymbolType::RightParen) => break,
+                TokenKind::Symbol(SymbolType::Comma) => continue,
+                _ => {
+                    return Err(ParseError {
+                        token: comma_or_right_paren.clone(),
+                        error_kind: ErrorKind::ExpectedCommaOrRightParen,
+                    })
+                }
+            }
+        }
+
+        Ok(Some(CreateStatement {
+            cols,
+            name: table_name_token.clone(),
+        }))
     }
 }
 
