@@ -1,5 +1,6 @@
 use crate::lexer::{KeywordType, SymbolType, Token, TokenKind};
 use std::borrow::BorrowMut;
+use std::fmt::Display;
 use std::ops::Deref;
 
 #[derive(Debug)]
@@ -18,10 +19,18 @@ enum ErrorKind {
     InvalidType,
 }
 
-#[derive(Debug)]
 pub struct ParseError {
     token: Token,
     error_kind: ErrorKind,
+}
+
+impl std::fmt::Debug for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Parse Error")
+            .field("token", &format_args!("{:#?}", self.token))
+            .field("error", &format_args!("{:?}", self.error_kind))
+            .finish()
+    }
 }
 
 struct Ast {
@@ -125,13 +134,9 @@ impl Parsable for InsertStatement {
             ErrorKind::MissingValuesKeyword,
         )?;
 
-        expect_token(
-            tokens.next(),
-            TokenKind::Symbol(SymbolType::LeftParen),
-            ErrorKind::MissingValuesKeyword,
-        )?;
-
         let mut values = Vec::<Token>::new();
+
+        let mut found_left_paren = false;
 
         loop {
             let token = tokens.next();
@@ -141,7 +146,18 @@ impl Parsable for InsertStatement {
                     error_kind: ErrorKind::MissingLeftParen,
                 });
             }
+
             let token = token.unwrap();
+
+            if !found_left_paren {
+                expect_token(
+                    Some(token),
+                    TokenKind::Symbol(SymbolType::LeftParen),
+                    ErrorKind::MissingLeftParen,
+                )?;
+                found_left_paren = true;
+                continue;
+            }
 
             match token.kind {
                 TokenKind::Identifier | TokenKind::Numeric => values.push(token.clone()),
