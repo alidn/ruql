@@ -37,27 +37,27 @@ enum StatementType {
 
 #[derive(Debug)]
 pub struct InsertStatement {
-    table: Token,
-    values: Vec<Token>,
+    pub table: Token,
+    pub values: Vec<Token>,
 }
 
 #[derive(Debug)]
 pub struct CreateStatement {
-    name: Token,
-    cols: Vec<Column>,
+    pub name: Token,
+    pub cols: Vec<Column>,
 }
 
 #[derive(Debug)]
-struct Column {
-    name: Token,
-    data_type: Token,
-    is_primary_key: bool,
+pub struct Column {
+    pub name: Token,
+    pub data_type: Token,
+    pub is_primary_key: bool,
 }
 
 #[derive(Debug)]
 pub struct SelectStatement {
-    table_name: Token,
-    items: Vec<SelectItem>,
+    pub table_name: Token,
+    pub items: Vec<SelectItem>,
 }
 
 pub trait Parsable: Sized {
@@ -339,7 +339,7 @@ impl Parsable for CreateStatement {
 }
 
 #[derive(Debug, Clone)]
-struct SelectItem {
-    name: Token,
-    as_name: Option<Token>,
+pub struct SelectItem {
+    pub name: Token,
+    pub as_name: Option<Token>,
 }
