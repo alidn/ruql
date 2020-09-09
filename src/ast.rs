@@ -1,7 +1,4 @@
-use crate::lexer::{KeywordType, SymbolType, Token, TokenKind};
-use std::borrow::BorrowMut;
-use std::fmt::Display;
-use std::ops::Deref;
+use crate::lexer::{lex, KeywordType, SymbolType, Token, TokenKind};
 
 #[derive(Debug)]
 enum ErrorKind {
@@ -19,12 +16,23 @@ enum ErrorKind {
     InvalidType,
 }
 
+impl std::fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorKind::MissingLeftParen => f.write_str("missing left paren"),
+            ErrorKind::MissingTableName => f.write_str("missing table name"),
+            _ => f.write_fmt(format_args!("{:?}", self))
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct ParseError {
     token: Token,
     error_kind: ErrorKind,
 }
 
-impl std::fmt::Debug for ParseError {
+impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Parse Error")
             .field("token", &format_args!("{:#?}", self.token))
@@ -71,6 +79,21 @@ pub struct SelectStatement {
 
 pub trait Parsable: Sized {
     fn from_tokens(tokens: &[Token]) -> Result<Option<Self>, ParseError>;
+}
+
+pub trait FromSource<T>: Sized {
+    fn from_source(source: &str) -> Result<Option<T>, Box<dyn std::error::Error>>;
+}
+
+impl<T> FromSource<T> for T
+where
+    T: Parsable,
+{
+    fn from_source(source: &str) -> Result<Option<T>, Box<dyn std::error::Error>> {
+        let tokens = lex(source)?;
+        let statement = T::from_tokens(&tokens)?;
+        Ok(statement)
+    }
 }
 
 fn expect_token(
@@ -359,3 +382,5 @@ pub struct SelectItem {
     pub name: Token,
     pub as_name: Option<Token>,
 }
+
+impl std::error::Error for ParseError {}
