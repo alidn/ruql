@@ -1,7 +1,11 @@
+use std::fmt::Display;
+
 use crate::ast::{CreateStatement, InsertStatement, SelectStatement};
 use crate::lexer::{KeywordType, Token, TokenKind};
 use crate::table::{MemoryError, Result};
 pub trait Database {
+    fn run_query(&mut self, query: &str) -> std::result::Result<Option<QueryResult>, Box<dyn std::error::Error>>;
+
     fn create_table(&mut self, create_statement: CreateStatement) -> Result<()>;
 
     fn insert(&mut self, insert_statement: InsertStatement) -> Result<()>;
@@ -13,6 +17,22 @@ pub trait Database {
 pub struct QueryResult {
     pub columns: Vec<Column>,
     pub rows: Vec<Vec<crate::table::Cell>>,
+}
+
+impl Display for QueryResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for column in &self.columns {
+            write!(f, "{} | ", column.name)?;
+        }
+        write!(f, "\n------------------\n")?;
+        for row in &self.rows {
+            for row_cell in row {
+                write!(f, "{} | ", row_cell.value)?;
+            }
+            write!(f, "\n------------------\n")?;
+        }
+        write!(f, "END")
+    }
 }
 
 #[derive(Debug, Clone)]

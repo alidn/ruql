@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{CreateStatement, InsertStatement, SelectItem, SelectStatement};
+use crate::ast::{CreateStatement, InsertStatement, SelectItem, SelectStatement, FromSource};
 use crate::database::{CellType, Column, Database, QueryResult};
 use crate::lexer::Token;
 
@@ -10,6 +10,24 @@ pub struct Memory {
 }
 
 impl Database for Memory {
+    fn run_query(&mut self, query: &str) -> std::result::Result<Option<QueryResult>, Box<dyn std::error::Error>> {
+        let insert_stmt = InsertStatement::from_source(query)?;
+        let select_stmt = SelectStatement::from_source(query)?;
+        let create_stmt = CreateStatement::from_source(query)?;
+        if let Some(stmt) = insert_stmt {
+            self.insert(stmt)?;
+            Ok(None)
+        } else if let Some(stmt) = select_stmt {
+            let result = self.select(stmt)?;
+            Ok(Some(result))
+        } else if let Some(stmt) = create_stmt {
+            self.create_table(stmt)?;
+            Ok(None)
+        } else {
+            Err(Box::new(MemoryError::QueryNotValid))
+        }
+    }
+
     fn insert(&mut self, insert_statement: InsertStatement) -> Result<()> {
         let table = self.get_table_mut(&insert_statement.table.value)?;
         let mut row = Vec::<CellValue>::new();
@@ -65,9 +83,9 @@ impl Database for Memory {
 
 #[derive(Default)]
 pub struct Table {
-    name: String,
-    columns: Vec<Column>,
-    rows: Vec<Vec<CellValue>>,
+    pub name: String,
+    pub columns: Vec<Column>,
+    pub rows: Vec<Vec<CellValue>>,
 }
 
 impl Table {
@@ -118,13 +136,19 @@ impl Table {
 
 #[derive(Default, Debug)]
 pub struct Cell {
-    value: CellValue,
-    column_name: String,
-    cell_type: CellType,
+    pub value: CellValue,
+    pub column_name: String,
+    pub cell_type: CellType,
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct CellValue(String);
+
+impl std::fmt::Display for CellValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl From<Token> for CellValue {
     fn from(token: Token) -> Self {
@@ -156,22 +180,27 @@ impl Memory {
 
 pub type Result<T> = std::result::Result<T, MemoryError>;
 
+#[derive(Debug)]
 pub enum MemoryError {
     // the String is the table name
     TableNotFound(String),
     ColumnNotFound(String),
     TableAlreadyExists(String),
-    InvalidType(String)
+    InvalidType(String),
+    QueryNotValid
 }
 
-impl std::fmt::Debug for MemoryError {
+impl std::fmt::Display for MemoryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MemoryError::TableNotFound(name) => f.write_fmt(format_args!("table {} not found", name)),
+            MemoryError::TableNotFound(name) => f.write_fmt(format_args!("table '{}' not found", name)),
             // TODO: add table name too
-            MemoryError::ColumnNotFound(name) => f.write_fmt(format_args!("column {} not found", name)),
-            MemoryError::TableAlreadyExists(name) => f.write_fmt(format_args!("table {} already exists", name)),
-            MemoryError::InvalidType(type_name) => f.write_fmt(format_args!("type {} is not valid", type_name))
+            MemoryError::ColumnNotFound(name) => f.write_fmt(format_args!("column '{}' not found", name)),
+            MemoryError::TableAlreadyExists(name) => f.write_fmt(format_args!("table '{}' already exists", name)),
+            MemoryError::InvalidType(type_name) => f.write_fmt(format_args!("type '{}' is not valid", type_name)),
+            MemoryError::QueryNotValid => f.write_str("Query not valid")
         }
     }
 }
+
+impl std::error::Error for MemoryError {}
