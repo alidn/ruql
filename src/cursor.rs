@@ -10,7 +10,7 @@ impl Cursor {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct Location {
     pub line: usize,
     pub column: usize,

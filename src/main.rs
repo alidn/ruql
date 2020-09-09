@@ -1,3 +1,5 @@
+use std::io::{self, BufRead, Write};
+
 mod ast;
 mod cursor;
 mod database;
@@ -54,25 +56,31 @@ fn create_statement_example() {
     println!("{:#?}", stmt.unwrap());
 }
 
-fn main() {
-    let create_statement_source = "create table mytable (id text , name text)";
-    let create_tokens = lex(create_statement_source).unwrap();
-    let create_statement = ast::CreateStatement::from_tokens(&create_tokens).unwrap().unwrap();
-
-    let insert_statement_source = "insert into mytable values (\'one\' , \'two\' )";
-    let insert_tokens = lex(insert_statement_source).unwrap();
-    insert_tokens.iter().for_each(|t| println!("{:?}", t));
-    let insert_statement = ast::InsertStatement::from_tokens(&insert_tokens)
-        .unwrap()
-        .unwrap();
-
-    let select_statement_source = "select id from mytable";
-    let select_tokens = lex(select_statement_source).unwrap();
-    let select_statement = ast::SelectStatement::from_tokens(&select_tokens).unwrap().unwrap();
-
+fn run_repl() {
     let mut memory = Memory::default();
-    memory.create_table(create_statement).unwrap();
-    memory.insert(insert_statement).unwrap();
-    let result = memory.select(select_statement).unwrap();
-    println!("{:#?}", result);
+    println!();
+    loop {
+        print!("#> ");
+        io::stdout().flush().unwrap();
+        
+        let stdin = std::io::stdin();
+        let mut query = String::new();
+        
+        stdin.lock().read_line(&mut query).unwrap();
+
+        let query_result = memory.run_query(&query);
+        match query_result {
+            Ok(res) => {
+                match res {
+                    Some(v) => println!("{}", v),
+                    None => println!("query executed")
+                }
+            },
+            Err(err) => println!("an error occurred: {}", err)
+        }
+    }
+}
+
+fn main() {
+    run_repl();
 }

@@ -1,14 +1,15 @@
 use crate::cursor::Location;
 use std::fmt;
 
+#[derive(Clone, Copy, Debug)]
 pub struct LexError {
     repr: ErrorKind,
     location: Location,
 }
 
-impl fmt::Debug for LexError {
+impl fmt::Display for LexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ERR!")
+        f.debug_tuple("Lex Error")
             .field(&self.repr)
             .field(&self.location)
             .finish()
@@ -24,7 +25,9 @@ impl LexError {
     }
 }
 
-#[derive(Debug)]
+impl std::error::Error for LexError {}
+
+#[derive(Debug, Copy, Clone)]
 pub enum ErrorKind {
     InvalidToken,
 }
